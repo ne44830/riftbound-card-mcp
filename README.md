@@ -5,6 +5,11 @@ It adds `show_base_card(name, set?)`, which finds the ordinary printing in the
 unofficial Riftcodex database and serves its image in an inline MCP Apps card.
 The existing rules skill remains the source of judge behavior.
 
+If the live Riftcodex API rejects a cloud-hosting IP with HTTP 403, the lookup
+uses the included dated `base-cards.json` metadata snapshot. No card image
+files are bundled. The tool response identifies when the snapshot was used.
+Refresh that snapshot periodically when new cards are released.
+
 ## Run and test
 
 ```bash
@@ -13,7 +18,7 @@ npm start
 ```
 
 The local endpoint is `http://localhost:8787/mcp` by default. Set `PORT` to
-change it. The server must reach `https://api.riftcodex.com`; the ChatGPT
+change it. The server attempts `https://api.riftcodex.com` first; the ChatGPT
 card-image component must load images from `https://cmsassets.rgpub.io`.
 
 Use MCP Inspector with Streamable HTTP to test `show_base_card` for

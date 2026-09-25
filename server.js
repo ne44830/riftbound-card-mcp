@@ -10,6 +10,7 @@ const UI_URI = "ui://riftbound-card/base-v1.html";
 const html = readFileSync(new URL("./public/card.html", import.meta.url), "utf8");
 const API = "https://api.riftcodex.com";
 const IMAGE_ORIGIN = "https://cmsassets.rgpub.io";
+const snapshot = JSON.parse(readFileSync(new URL("./base-cards.json", import.meta.url), "utf8"));
 
 export function chooseCard(items, requestedSet) {
   const base = items.filter(c => c?.metadata?.alternate_art === false &&
@@ -23,16 +24,32 @@ export function chooseCard(items, requestedSet) {
 async function cardsByName(name, fuzzy) {
   const url = new URL("/cards/name", API);
   url.searchParams.set(fuzzy ? "fuzzy" : "exact", name);
-  const response = await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(10000) });
+  const response = await fetch(url, { headers: { accept: "application/json", "user-agent": "RiftboundCardMCP/0.1 (public card lookup)" }, signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new Error("Card lookup service returned " + response.status);
   const data = await response.json();
   return Array.isArray(data.items) ? data.items : [];
 }
 
 export async function findCard(name, set) {
-  const exact = await cardsByName(name, false);
-  let candidates = exact;
-  if (!candidates.length) candidates = await cardsByName(name, true);
+  let exact, candidates, cached = false;
+  try {
+    exact = await cardsByName(name, false);
+    candidates = exact.length ? exact : await cardsByName(name, true);
+  } catch {
+    // Some cloud-hosting IP ranges receive HTTP 403 from the public API.
+    // Keep card display available from a dated snapshot of card metadata.
+    cached = true;
+    const normalized = s => s.toLocaleLowerCase().replace(/[^a-z0-9]/g, "");
+    const search = normalized(name);
+    const matches = snapshot.cards.filter(c => normalized(c.name) === search);
+    const records = matches.length ? matches : snapshot.cards.filter(c => normalized(c.name).includes(search));
+    exact = matches;
+    candidates = records.map(c => ({
+      ...c, set: { label: c.set, set_id: c.set_id },
+      media: { image_url: c.image_url }, text: { plain: c.text },
+      metadata: { alternate_art: false, overnumbered: false, signature: false }
+    }));
+  }
   const card = chooseCard(candidates, set);
   if (!card) return { error: "No ordinary base printing found for this name and set." };
   // Fuzzy results can contain several different card names. Require an exact name
@@ -48,7 +65,8 @@ export async function findCard(name, set) {
     set: card.set.label,
     image_url: image.href,
     text: card.text?.plain ?? "",
-    unofficial_source: "Riftcodex"
+    unofficial_source: "Riftcodex",
+    ...(cached ? { metadata_snapshot_utc: snapshot.generated_utc } : {})
   };
 }
 
