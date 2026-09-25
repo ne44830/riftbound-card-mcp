@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body { margin: 0; padding: 12px; font: 14px system-ui, sans-serif; color: #222; }
+    figure { max-width: 300px; margin: 0 auto; }
+    img { display: block; width: 100%; height: auto; border-radius: 10px; }
+    figcaption { margin-top: 8px; text-align: center; }
+    .status { text-align: center; }
+    a { color: inherit; }
+  </style>
+</head>
+<body>
+  <div class="status" id="status">Loading card…</div>
+  <figure id="card" hidden>
+    <img id="image" alt="">
+    <figcaption><strong id="name"></strong> <span id="printing"></span></figcaption>
+  </figure>
+  <script>
+    const allowedImageOrigin = "https://cmsassets.rgpub.io";
+    function render(value) {
+      const status = document.getElementById("status");
+      if (value?.error) { status.textContent = value.error; return; }
+      let url;
+      try { url = new URL(value?.image_url); } catch { status.textContent = "Card image unavailable."; return; }
+      if (url.origin !== allowedImageOrigin) { status.textContent = "Card image host is not allowed."; return; }
+      const image = document.getElementById("image");
+      image.src = url.href;
+      image.alt = value.name + " — " + value.riftbound_id + " card image";
+      image.onerror = () => { status.textContent = "Card image could not load."; status.hidden = false; document.getElementById("card").hidden = true; };
+      document.getElementById("name").textContent = value.name;
+      document.getElementById("printing").textContent = "(" + value.riftbound_id + ", " + value.set + ")";
+      document.getElementById("card").hidden = false;
+      status.hidden = true;
+    }
+    const pending = new Map();
+    let nextId = 1;
+    function request(method, params) {
+      const id = nextId++;
+      window.parent.postMessage({ jsonrpc: "2.0", id, method, params }, "*");
+      return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+    }
+    window.addEventListener("message", (event) => {
+      if (event.source !== window.parent || event.data?.jsonrpc !== "2.0") return;
+      const message = event.data;
+      if (pending.has(message.id)) {
+        const callback = pending.get(message.id);
+        pending.delete(message.id);
+        message.error ? callback.reject(message.error) : callback.resolve(message.result);
+      }
+      if (message.method === "ui/notifications/tool-result") render(message.params?.structuredContent);
+    });
+    request("ui/initialize", {
+      appInfo: { name: "riftbound-card", version: "0.1.0" },
+      appCapabilities: {},
+      protocolVersion: "2026-01-26"
+    }).then(() => {
+      window.parent.postMessage({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} }, "*");
+    }).catch(() => { document.getElementById("status").textContent = "Card viewer could not initialize."; });
+  </script>
+</body>
+</html>
